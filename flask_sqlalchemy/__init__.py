@@ -22,7 +22,7 @@ from math import ceil
 from flask import _request_ctx_stack, abort, has_request_context, request
 from flask.signals import Namespace
 from operator import itemgetter
-from threading import Lock, RLock
+from threading import Lock
 from sqlalchemy import orm, event, inspect
 from sqlalchemy.orm.exc import UnmappedClassError
 from sqlalchemy.orm.session import Session as SessionBase
@@ -55,7 +55,7 @@ _signals = Namespace()
 
 models_committed = _signals.signal('models-committed')
 before_models_committed = _signals.signal('before-models-committed')
-db_chooser = RLock()
+db_chooser = Lock()
 using_master = True
 
 
@@ -437,6 +437,8 @@ class BaseQuery(orm.Query):
     This is the default :attr:`~Model.query` object used for models, and exposed as :attr:`~SQLAlchemy.Query`.
     Override the query class for an individual model by subclassing this and setting :attr:`~Model.query_class`.
     """
+
+    using_master = True
 
     def get_or_404(self, ident):
         """Like :meth:`get` but aborts with 404 if not found instead of returning ``None``."""
