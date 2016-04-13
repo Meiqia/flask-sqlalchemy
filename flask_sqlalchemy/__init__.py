@@ -22,7 +22,7 @@ from math import ceil
 from flask import _request_ctx_stack, abort, has_request_context, request
 from flask.signals import Namespace
 from operator import itemgetter
-from threading import Lock
+from threading import Lock, RLock
 from sqlalchemy import orm, event, inspect
 from sqlalchemy.orm.exc import UnmappedClassError
 from sqlalchemy.orm.session import Session as SessionBase
@@ -56,7 +56,7 @@ _signals = Namespace()
 
 models_committed = _signals.signal('models-committed')
 before_models_committed = _signals.signal('before-models-committed')
-db_chooser = Lock()
+db_chooser = RLock()
 using_master = True
 
 
