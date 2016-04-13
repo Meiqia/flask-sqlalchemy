@@ -26,7 +26,6 @@ from threading import Lock, RLock
 from sqlalchemy import orm, event, inspect
 from sqlalchemy.orm.exc import UnmappedClassError
 from sqlalchemy.orm.session import Session as SessionBase
-from sqlalchemy.sql.expression import Select
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.declarative import declarative_base, DeclarativeMeta
 from flask_sqlalchemy._compat import itervalues, xrange, string_types
@@ -195,8 +194,7 @@ class SignallingSession(SessionBase):
                 state = get_state(self.app)
                 return state.db.get_engine(self.app, bind=bind_key)
 
-        is_select = isinstance(clause, Select)
-        if using_master or not is_select:
+        if using_master:
             return SessionBase.get_bind(self, mapper, clause)
         else:
             state = get_state(self.app)
