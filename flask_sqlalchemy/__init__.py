@@ -62,11 +62,11 @@ using_master = local()
 def choose_slave():
     """Choose slave."""
     global using_master
-    using_master.disabled = False
+    using_master.disabled = True
     try:
         yield
     finally:
-        using_master.disabled = True
+        using_master.disabled = False
 
 
 def with_slave(func):
@@ -194,7 +194,7 @@ class SignallingSession(SessionBase):
                 state = get_state(self.app)
                 return state.db.get_engine(self.app, bind=bind_key)
 
-        if not hasattr(using_master, "disabled"):
+        if not hasattr(using_master, "disabled") or not using_master.disabled:
             return SessionBase.get_bind(self, mapper, clause)
         else:
             state = get_state(self.app)
