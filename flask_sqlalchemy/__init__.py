@@ -22,7 +22,7 @@ from math import ceil
 from flask import _request_ctx_stack, abort, has_request_context, request
 from flask.signals import Namespace
 from operator import itemgetter
-from threading import Lock, RLock
+from threading import Lock, local
 from sqlalchemy import orm, event, inspect
 from sqlalchemy.orm.exc import UnmappedClassError
 from sqlalchemy.orm.session import Session as SessionBase
@@ -55,29 +55,27 @@ _signals = Namespace()
 
 models_committed = _signals.signal('models-committed')
 before_models_committed = _signals.signal('before-models-committed')
-db_chooser = RLock()
-using_master = True
+using_master = local()
 
 
 @contextmanager
 def choose_slave():
     """Choose slave."""
     global using_master
-    using_master = False
+    using_master.disabled = False
     try:
         yield
     finally:
-        using_master = True
+        using_master.disabled = True
 
 
 def with_slave(func):
     """Using slave session."""
     @functools.wraps(func)
     def wraps(*args, **kwargs):
-        with db_chooser:
-            with choose_slave():
-                rst = func(*args, **kwargs)
-                return rst
+        with choose_slave():
+            rst = func(*args, **kwargs)
+            return rst
     return wraps
 
 
@@ -196,7 +194,7 @@ class SignallingSession(SessionBase):
                 state = get_state(self.app)
                 return state.db.get_engine(self.app, bind=bind_key)
 
-        if using_master:
+        if not hasattr(using_master, "disabled"):
             return SessionBase.get_bind(self, mapper, clause)
         else:
             state = get_state(self.app)
