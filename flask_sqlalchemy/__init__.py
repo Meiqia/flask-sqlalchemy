@@ -64,8 +64,10 @@ def choose_slave():
     """Choose slave."""
     global using_master
     using_master = False
-    yield
-    using_master = True
+    try:
+        yield
+    finally:
+        using_master = True
 
 
 def with_slave(func):
@@ -437,8 +439,6 @@ class BaseQuery(orm.Query):
     This is the default :attr:`~Model.query` object used for models, and exposed as :attr:`~SQLAlchemy.Query`.
     Override the query class for an individual model by subclassing this and setting :attr:`~Model.query_class`.
     """
-
-    using_master = True
 
     def get_or_404(self, ident):
         """Like :meth:`get` but aborts with 404 if not found instead of returning ``None``."""
