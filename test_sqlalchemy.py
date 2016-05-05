@@ -5,6 +5,7 @@ import unittest
 from datetime import datetime
 import flask
 import flask_sqlalchemy as sqlalchemy
+from flask_sqlalchemy import with_slave
 from sqlalchemy import MetaData, event
 from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.orm import sessionmaker
@@ -750,6 +751,41 @@ class StandardSessionTestCase(unittest.TestCase):
         event.listen(db.session, 'after_commit', lambda session: None)
 
 
+class TestUtils(unittest.TestCase):
+
+    def test_with_slave(self):
+        from flask_sqlalchemy import using_master
+        from flask_sqlalchemy import _stack
+
+        @with_slave
+        def test():
+            return 'test'
+
+        test()
+        self.assertEqual(using_master.disabled, False)
+        self.assertEqual(len(_stack.items), 0)
+
+    def test_multi_with_slave(self):
+        from flask_sqlalchemy import using_master
+        from flask_sqlalchemy import _stack
+
+        @with_slave
+        def test():
+            assert using_master.disabled
+            assert len(_stack.items) == 2
+            return 'test'
+
+        @with_slave
+        def test1():
+            test()
+            assert using_master.disabled
+            assert len(_stack.items) == 1
+            return 'test1'
+
+        test1()
+        self.assertEqual(len(_stack.items), 0)
+
+
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(unittest.makeSuite(BasicAppTestCase))
@@ -763,6 +799,7 @@ def suite():
     suite.addTest(unittest.makeSuite(RegressionTestCase))
     suite.addTest(unittest.makeSuite(SessionScopingTestCase))
     suite.addTest(unittest.makeSuite(CommitOnTeardownTestCase))
+    suite.addTest(unittest.makeSuite(TestUtils))
     if flask.signals_available:
         suite.addTest(unittest.makeSuite(SignallingTestCase))
     suite.addTest(unittest.makeSuite(StandardSessionTestCase))
