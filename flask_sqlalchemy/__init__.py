@@ -56,8 +56,6 @@ _signals = Namespace()
 models_committed = _signals.signal('models-committed')
 before_models_committed = _signals.signal('before-models-committed')
 using_master = local()
-_stack = local()
-_stack.items = []
 
 
 @contextmanager
@@ -68,21 +66,16 @@ def choose_slave():
     try:
         yield
     finally:
-        if not _stack.items:
-            using_master.disabled = False
+        using_master.disabled = False
 
 
 def with_slave(func):
     """Using slave session."""
     @functools.wraps(func)
     def wraps(*args, **kwargs):
-        _stack.items.append(1)
         with choose_slave():
-            try:
-                rst = func(*args, **kwargs)
-                return rst
-            finally:
-                _stack.items.pop()
+            rst = func(*args, **kwargs)
+            return rst
     return wraps
 
 
