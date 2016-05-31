@@ -898,11 +898,16 @@ class SQLAlchemy(object):
         using_nullpool = app.config['SQLALCHEMY_USING_NULLPOOL']
         if info.drivername.startswith('mysql'):
             info.query.setdefault('charset', 'utf8')
-            if info.drivername != 'mysql+gaerdbms':
-                options.setdefault('pool_size', 10)
-                options.setdefault('pool_recycle', 7200)
             if using_nullpool:
+                options.pop('pool_size', None)
+                options.pop('pool_timeout', None)
+                options.pop('pool_recycle', None)
+                options.pop('max_overflow', None)
                 options['poolclass'] = NullPool
+            else:
+                if info.drivername != 'mysql+gaerdbms':
+                    options.setdefault('pool_size', 10)
+                    options.setdefault('pool_recycle', 7200)
         elif info.drivername == 'sqlite':
             pool_size = options.get('pool_size')
             detected_in_memory = False
