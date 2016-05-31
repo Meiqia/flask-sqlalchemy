@@ -28,6 +28,7 @@ from sqlalchemy.orm.exc import UnmappedClassError
 from sqlalchemy.orm.session import Session as SessionBase
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.declarative import declarative_base, DeclarativeMeta
+from sqlalchemy.pool import NullPool
 from flask_sqlalchemy._compat import itervalues, xrange, string_types
 
 # the best timer function for the platform
@@ -844,6 +845,7 @@ class SQLAlchemy(object):
         app.config.setdefault('SQLALCHEMY_POOL_RECYCLE', None)
         app.config.setdefault('SQLALCHEMY_MAX_OVERFLOW', None)
         app.config.setdefault('SQLALCHEMY_COMMIT_ON_TEARDOWN', False)
+        app.config.setdefault('SQLALCHEMY_USING_NULLPOOL', False)
         track_modifications = app.config.setdefault('SQLALCHEMY_TRACK_MODIFICATIONS', None)
 
         if track_modifications is None:
@@ -893,11 +895,14 @@ class SQLAlchemy(object):
         like pool sizes for MySQL and sqlite.  Also it injects the setting of
         `SQLALCHEMY_NATIVE_UNICODE`.
         """
+        using_nullpool = app.config['SQLALCHEMY_USING_NULLPOOL']
         if info.drivername.startswith('mysql'):
             info.query.setdefault('charset', 'utf8')
             if info.drivername != 'mysql+gaerdbms':
                 options.setdefault('pool_size', 10)
                 options.setdefault('pool_recycle', 7200)
+            if using_nullpool:
+                options['poolclass'] = NullPool
         elif info.drivername == 'sqlite':
             pool_size = options.get('pool_size')
             detected_in_memory = False
@@ -919,7 +924,6 @@ class SQLAlchemy(object):
             # user did not want a queue for this sqlite connection and
             # hook in the null pool.
             elif not pool_size:
-                from sqlalchemy.pool import NullPool
                 options['poolclass'] = NullPool
 
             # if it's not an in memory database we make the path absolute.
