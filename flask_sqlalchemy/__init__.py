@@ -199,7 +199,13 @@ class SignallingSession(SessionBase):
             return SessionBase.get_bind(self, mapper, clause)
         else:
             state = get_state(self.app)
-            return state.db.get_engine(self.app, bind="slaves")
+            slaves = self.app.config['SQLALCHEMY_DATABASE_SLAVE_URIS']
+            if slaves:
+                random_index = random.randrange(len(slaves))
+                bind = 'slaves_{}'.format(random_index)
+            else:
+                bind = None
+            return state.db.get_engine(self.app, bind=bind)
 
 
 class _SessionSignalEvents(object):
@@ -544,15 +550,14 @@ class _EngineConnector(object):
         self._lock = Lock()
 
     def get_uri(self):
-        if self._bind == "slaves":
-            slaves = self._app.config["SQLALCHEMY_DATABASE_SLAVE_URIS"] or ()
-            if slaves:
-                return random.choice(slaves)
-            else:
-                self._bind = None
-
         if self._bind is None:
             return self._app.config['SQLALCHEMY_DATABASE_URI']
+
+        elif self._bind.startswith('slaves'):
+            index = int(self._bind.split('_')[1])
+            slaves = self._app.config['SQLALCHEMY_DATABASE_SLAVE_URIS'] or ()
+            return slaves[index]
+
         binds = self._app.config.get('SQLALCHEMY_BINDS') or ()
         assert self._bind in binds, \
             'Bind %r is not specified.  Set it in the SQLALCHEMY_BINDS ' \
