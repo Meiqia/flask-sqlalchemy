@@ -17,19 +17,21 @@ import time
 import functools
 import warnings
 import sqlalchemy
-from contextlib import contextmanager
 from math import ceil
+from threading import Lock
+
 from flask import _request_ctx_stack, abort, has_request_context, request
 from flask.signals import Namespace
+from flask_sqlalchemy._compat import itervalues, xrange, string_types
 from operator import itemgetter
-from threading import Lock, local
 from sqlalchemy import orm, event, inspect
-from sqlalchemy.orm.exc import UnmappedClassError
-from sqlalchemy.orm.session import Session as SessionBase
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.ext.declarative import declarative_base, DeclarativeMeta
+from sqlalchemy.orm.exc import UnmappedClassError
+from sqlalchemy.orm.session import Session as SessionBase
 from sqlalchemy.pool import NullPool
-from flask_sqlalchemy._compat import itervalues, xrange, string_types
+from sqlalchemy.sql.expression import Select
+
 
 # the best timer function for the platform
 if sys.platform == 'win32':
@@ -56,28 +58,6 @@ _signals = Namespace()
 
 models_committed = _signals.signal('models-committed')
 before_models_committed = _signals.signal('before-models-committed')
-using_master = local()
-
-
-@contextmanager
-def choose_slave():
-    """Choose slave."""
-    global using_master
-    using_master.disabled = True
-    try:
-        yield
-    finally:
-        using_master.disabled = False
-
-
-def with_slave(func):
-    """Using slave session."""
-    @functools.wraps(func)
-    def wraps(*args, **kwargs):
-        with choose_slave():
-            rst = func(*args, **kwargs)
-            return rst
-    return wraps
 
 
 def _make_table(db):
@@ -195,7 +175,7 @@ class SignallingSession(SessionBase):
                 state = get_state(self.app)
                 return state.db.get_engine(self.app, bind=bind_key)
 
-        if not hasattr(using_master, "disabled") or not using_master.disabled:
+        if not isinstance(clause, Select):
             return SessionBase.get_bind(self, mapper, clause)
         else:
             state = get_state(self.app)
