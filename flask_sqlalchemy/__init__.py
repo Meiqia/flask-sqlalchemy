@@ -9,6 +9,8 @@
     :license: BSD, see LICENSE for more details.
 """
 from __future__ import absolute_import
+
+import contextlib
 import os
 import random
 import re
@@ -136,6 +138,127 @@ def _calling_context(app_path):
     return '<unknown>'
 
 
+class _symbol(object):
+    """represent a fixed symbol."""
+
+    __slots__ = 'name',
+
+    def __init__(self, name):
+        self.name = name
+
+    def __repr__(self):
+        return "symbol(%r)" % self.name
+
+
+_MASTER = _symbol('MASTER')
+_SLAVE = _symbol('SLAVE')
+
+
+class _BindModeContext(object):
+    """Cascading bind mode context."""
+
+    def __init__(self):
+        self.mode = None
+        self._mode_stack = []
+
+    @contextlib.contextmanager
+    def _produce_mode(self, mode=None):
+        if mode is _MASTER:
+            self._master()
+        elif mode is _SLAVE:
+            self._slave()
+
+        self._push_mode()
+        try:
+            yield
+        finally:
+            self._pop_mode()
+
+    def _master(self):
+        if self.mode is None:
+            self.mode = _MASTER
+        elif self.mode is _SLAVE:
+            raise TypeError("Can't upgrade from slave to master.")
+
+    def _slave(self):
+        if self.mode is None:
+            self.mode = _SLAVE
+
+    def _push_mode(self):
+        self._mode_stack.append(self.mode)
+
+    def _pop_mode(self):
+        return self._mode_stack.pop(-1)
+
+    @property
+    def current_mode(self):
+        return self._mode_stack[-1] if self._mode_stack else None
+
+
+class BindModeContextManger(object):
+    """Manager for bind mode context, provides both decorators and context
+    mangers.
+    """
+
+    def __init__(self, root=None, mode=None):
+        if root is None:
+            self._root = self
+        else:
+            self._root = root
+
+        self._mode = mode
+
+    @property
+    def master(self):
+        return self._clone(mode=_MASTER)
+
+    @property
+    def slave(self):
+        return self._clone(mode=_SLAVE)
+
+    def _clone(self, mode=None):
+        return BindModeContextManger(root=self._root, mode=mode)
+
+    def __call__(self, fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            ctx = connection_stack.top
+            with self._mode_scope(ctx):
+                return fn(*args, **kwargs)
+
+        return wrapper
+
+    @contextlib.contextmanager
+    def _mode_scope(self, ctx):
+        bind_mode_context = getattr(ctx, '_flask_sa_bind_mode_context', None)
+        if bind_mode_context is None:
+            bind_mode_context = \
+                ctx._flask_sa_bind_mode_context = _BindModeContext()
+
+        if self._mode:
+            with bind_mode_context._produce_mode(mode=self._mode):
+                yield
+        else:
+            yield
+
+    def using(self, ctx=None):
+        if not ctx:
+            ctx = connection_stack.top
+        return self._mode_scope(ctx)
+
+
+_bind_mode_context_manager = BindModeContextManger()
+
+bind_master = _bind_mode_context_manager.master
+bind_slave = _bind_mode_context_manager.slave
+
+
+def _current_bind_mode_context(ctx=None):
+    if not ctx:
+        ctx = connection_stack.top
+    return getattr(ctx, '_flask_sa_bind_mode_context', None)
+
+
 class SignallingSession(SessionBase):
     """The signalling session is the default session that Flask-SQLAlchemy
     uses.  It extends the default session system with bind selection and
@@ -175,17 +298,25 @@ class SignallingSession(SessionBase):
                 state = get_state(self.app)
                 return state.db.get_engine(self.app, bind=bind_key)
 
-        if not isinstance(clause, Select):
-            return SessionBase.get_bind(self, mapper, clause)
-        else:
+        bind_mode_context = _current_bind_mode_context()
+        current_mode = getattr(bind_mode_context, 'current_mode', None)
+
+        # 1) When no mode is explicitly specified, and SELECT based operations
+        # is being made.
+        # 2) When _SLAVE is explicitly specified
+        # Then use slave connection
+        if ((current_mode is None and isinstance(clause, Select)) or
+                current_mode is _SLAVE):
             state = get_state(self.app)
             slaves = self.app.config['SQLALCHEMY_DATABASE_SLAVE_URIS']
             if slaves:
                 random_index = random.randrange(len(slaves))
-                bind = 'slaves_{}'.format(random_index)
+                bind_key = 'slaves_{}'.format(random_index)
             else:
-                bind = None
-            return state.db.get_engine(self.app, bind=bind)
+                bind_key = None
+            return state.db.get_engine(self.app, bind=bind_key)
+
+        return SessionBase.get_bind(self, mapper, clause)
 
 
 class _SessionSignalEvents(object):
