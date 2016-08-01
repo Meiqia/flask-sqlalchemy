@@ -47,7 +47,7 @@ except ImportError:
     _app_ctx_stack = None
 
 
-__version__ = '3.0-dev'
+__version__ = '2016.8.1'
 
 
 # Which stack should we use?  _app_ctx_stack is new in 0.9
